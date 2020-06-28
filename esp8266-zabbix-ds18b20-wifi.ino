@@ -271,10 +271,13 @@ void choosePasswordConfig() {
     address++;
   }
   if(login[0] == 255 || password[0] == 255) {
+
+    address = 12;
     for (uint8_t k = 0; k < loginLength; k++) {
       login[k] = defaultLogin[k];
       password[k] = defaultPassword[k];
     }
+
     for (uint8_t k = 0; k < loginLength; k++) {
       EEPROM.write(address, login[k]);
       address++;
@@ -354,7 +357,7 @@ void setup() {
   chooseDsRes();
   choosePasswordConfig();
   chooseWifi();
-  //eepromReadData();
+  eepromReadData();
   WiFi.mode(WIFI_STA);
   WiFi.config(ip, gateway, mask, nameserver);
   WiFi.begin(ssid, WiFiPassword);
