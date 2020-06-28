@@ -357,7 +357,7 @@ void setup() {
   chooseDsRes();
   choosePasswordConfig();
   chooseWifi();
-  eepromReadData();
+  //eepromReadData();
   WiFi.mode(WIFI_STA);
   WiFi.config(ip, gateway, mask, nameserver);
   WiFi.begin(ssid, WiFiPassword);
