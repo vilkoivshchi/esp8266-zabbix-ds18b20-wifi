@@ -8,6 +8,10 @@
 
 //Pin to which is attached a DS18B20 sensor
 #define ONE_WIRE_BUS D4
+
+//define relay pin
+#define RELAY_CH01 D2
+
 //The maximum number of devices
 const uint8_t ONE_WIRE_MAX_DEV = 16;
 //The resolution of the DS18B20 is configurable (9, 10, 11, or 12 bits), with 12-bit readings the factory default state. This
@@ -16,7 +20,7 @@ const uint8_t defDsResolution = 9;
 uint8_t dsResolution = 9;
 
 
-const char* defaultSsid = "your_ssid";
+const char* defaultSsid = "youe_ssid";
 const char* defaultWifiPass = "your_pass";
 
 char ssid[32];
@@ -67,7 +71,22 @@ uint8_t loginLength = sizeof(login);
 uint8_t passwordLength = sizeof(password);
 
 //const int eeprom_size = 47;
-const int eeprom_size = 111;
+/*
+0...3 == IP
+4...7 == subnet
+8...1 == gateway
+12...28 == web username
+29...45 == web password
+46 == DS18B20 resolution (common)
+47...78 == SSID
+79...110 == WiFi pass
+111 == CH01 relay state
+*/
+const uint8_t ch01_state_addr = 111;
+const int eeprom_size = 112;
+
+//var for relay state
+bool relay_ch01_check;
 
 char base64Str[32];
 
@@ -347,6 +366,11 @@ void chooseWifi() {
   }
 }
 
+void channelsSetState()
+{
+
+}
+
 void setup() {
   Serial.begin(115200);
   //Enable EEPROM
@@ -357,7 +381,11 @@ void setup() {
   chooseDsRes();
   choosePasswordConfig();
   chooseWifi();
-  //eepromReadData();
+
+  //show EEPROM data in console at startup
+  eepromReadData();
+
+
   WiFi.mode(WIFI_STA);
   WiFi.config(ip, gateway, mask, nameserver);
   WiFi.begin(ssid, WiFiPassword);
@@ -384,6 +412,34 @@ void setup() {
 
   //Setup DS18b20 temperature sensor
   SetupDS18B20();
+
+  //define relay 1 pin state
+  uint8_t relay_ch01_check_temp;
+  pinMode(RELAY_CH01, OUTPUT);
+  EEPROM.get(ch01_state_addr, relay_ch01_check_temp);
+// my relay module turn on by LOW level
+  if(relay_ch01_check_temp > 1)
+  {
+    relay_ch01_check_temp = 0;
+    relay_ch01_check = false;
+    digitalWrite(RELAY_CH01, HIGH);
+    EEPROM.put(ch01_state_addr, relay_ch01_check);
+    EEPROM.commit();
+  }
+  if(relay_ch01_check_temp == 0)
+  {
+    Serial.println("CH 01 disabled");
+    relay_ch01_check = false;
+    digitalWrite(RELAY_CH01, HIGH);
+  }
+  else
+  {
+    Serial.println("CH 01 enabled");
+    relay_ch01_check = true;
+    digitalWrite(RELAY_CH01, LOW);
+
+  }
+
 
   memset(base64Str, 0, sizeof(base64Str));
   encodeAuthData(login, loginLength, password, passwordLength);
@@ -748,6 +804,55 @@ void loop() {
 
 
             }
+//#region RELAY
+            else if (strcmp(postToken, "ch01_toggle") == 0)
+            {
+              Serial.println(postToken);
+
+              if(relay_ch01_check)
+              {
+                // turn OFF channel
+                  digitalWrite(RELAY_CH01, HIGH);
+                  relay_ch01_check = false;
+                  EEPROM.put(ch01_state_addr, relay_ch01_check);
+                  if(EEPROM.commit())
+                  {
+                    Serial.println("CH01 state ON writed");
+                  }
+                  else
+                  {
+                   Serial.println("CH01 was NOT writed");
+                  }
+              }
+              else
+              {
+                // turn ON channel
+                 digitalWrite(RELAY_CH01, LOW);
+                 relay_ch01_check = true;
+                 EEPROM.put(ch01_state_addr, relay_ch01_check);
+                 if(EEPROM.commit())
+                 {
+                   Serial.println("CH01 state ON writed");
+                 }
+                 else
+                 {
+                  Serial.println("CH01 was NOT writed");
+                 }
+              }
+/*
+              EEPROM.put(ch01_state_addr, relay_ch01_check);
+              if(EEPROM.commit())
+              {
+                Serial.println("CH01 state writed");
+              }
+              else
+              {
+               Serial.println("CH01 was NOT writed");
+              }
+*/
+
+            }
+//#endregion
 
           }
           //parsing auth hash from client
@@ -806,14 +911,19 @@ void loop() {
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><link rel=\"shortcut icon\" href=\"#\" ><meta http-equiv=\"Refresh\" content=\"30\" ><meta charset=\"utf-8\"><title>Temperature monitoring</title></head><body>"));
             //if you want turn off CSS, start comment here...
+
             client.println(F("<style type=\"text/css\">"));
             client.println(F("body { background: #FE938C; font-family: Georgia, serif; }"));
             client.println(F("table { border-collapse: collapse; width: 400px; padding: 15px; text-align: center; }"));
+            client.println(F(".button { text-align: center; cursor: pointer; font-family: inherit; width: 400px; width: 400px; padding: 15px; }"));
+            //client.println(F(".button1 { padding: 12px 400px; }"));
             //client.println(F("a { font-family: inherit; }"));
             client.println(F("tr:nth-child(odd) { background: #EAD2AC; }"));
             client.println(F("tr:nth-child(even) { background: #E6B89C; }"));
             client.println(F("thead th, tfoot td { background: #9CAFB7; }"));
             client.println(F("</style>"));
+
+
             //...and finish here
             client.println(F("<table><thead><tr><th>Device id</th><th>Serial #</th><th>Temperature</th></th></thead>"));
             client.println(F("<tbody>"));
@@ -839,15 +949,27 @@ void loop() {
             client.println(F("Total devices: "));
             client.println(F("</td><td>"));
             client.println(numberOfDevices);
-            client.println(F("</tr></td></tfoot></table><p></p>"));
+            client.println(F("</tr></td></tfoot></table>"));
+
+            client.println(F("<form id=\"ch01_toggle\" method=\"post\"></form>"));
+
+            if(relay_ch01_check)
+            {
+              client.println(F("<input type=\"submit\" name=\"ch01_toggle\" form=\"ch01_toggle\" class=\"button\" value=\"CH01 ON\" formmethod=\"post\">"));
+            }
+            else
+            {
+              client.println(F("<input type=\"submit\" name=\"ch01_toggle\" form=\"ch01_toggle\" class=\"button\" value=\"CH01 OFF\" formmethod=\"post\">"));
+            }
 
             client.print(F("<table><tfoot><tr><td><a href=\"http://"));
             client.print(WiFi.localIP());
             client.print(F("/setup\">Setup</a></td></tr></tfoot></table></body></html>"));
           }
+//#region Setup
           else if (strcmp(webPageAddr, "/setup") == 0) {
 
-            //compare client auth hash with our auth hash
+//compare client auth hash with our auth hash
             if (strcmp(base64Str, webAuthTokenStr) == 0) {
               client.println(F("HTTP/1.1 200 OK"));
               client.println(F("Content-Type: text/html"));
@@ -858,6 +980,7 @@ void loop() {
               client.println(F("<!DOCTYPE HTML>"));
               client.println(F("<html><head><link rel=\"shortcut icon\" href=\"#\" /><meta charset=\"utf-8\"><title>Setup</title></head><body>"));
               //CSS begin here
+
               client.println(F("<style type=\"text/css\">"));
               client.println(F("body { background: #FE938C; font-family: Georgia, serif; }"));
               client.println(F("table { border-collapse: collapse; table-layout: fixed; width: 300px; padding: 15px;  text-align: center; }"));
@@ -959,8 +1082,10 @@ void loop() {
               client.println(F("HTTP/1.1 401 Unauthorized"));
               client.println(F("WWW-Authenticate: Basic realm=\"Say password\", charset=\"utf-8\""));
             }
-            //end of /setup scope
+//end of /setup scope
           }
+//#endregion
+//#region JSON
           else if (strcmp(webPageAddr, "/json") == 0) {
             //increase here if there are more than 16 devices
             StaticJsonDocument<1100> doc;
@@ -976,7 +1101,7 @@ void loop() {
 
             }
 
-            doc["total"] = numberOfDevices;
+            doc["ch_01"] = relay_ch01_check;
             client.println(F("HTTP/1.1 200 OK"));
             client.println(F("Content-Type: application/json"));
             client.println(F("Connection: close"));
@@ -986,7 +1111,7 @@ void loop() {
 
             // Write JSON document
             serializeJsonPretty(doc, client);
-
+//#endregion
           }
           else if (strcmp(webPageAddr, "/wifiscan") == 0) {
             if (strcmp(base64Str, webAuthTokenStr) == 0) {
